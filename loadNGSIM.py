@@ -3,14 +3,14 @@ import scipy.io as scp
 import numpy as np
 import torch
 import h5py
-
+    
 ### This is a modified version of the code : https://github.com/nachiket92/conv-social-pooling
-
+    
 ## Helper function for log sum exp calculation:
-def logsumexp(inputs, mask, dim=None, keepdim=False):
-    if dim is None:
+def logsumexp(inputs, mask, dim=None, keepdim=False):  # For eg. logexpsum(x,y,z) = log(e^x + e^y + e^z);
+    if dim is None: 
         inputs = inputs.view(-1)
-        dim = 0
+        dim = 0     
     s, _ = torch.max(inputs, dim=dim, keepdim=True)
     if mask is None:
         outputs = s + (inputs - s).exp().sum(dim=dim, keepdim=True).log()
@@ -23,7 +23,7 @@ def logsumexp(inputs, mask, dim=None, keepdim=False):
 
 
 ## Custom activation for output layer (Graves, 2015)
-def outputActivation(x, dim=2):
+def outputActivation(x, dim=2):  #by dvij : The output activation functions are defied manually, 1st and 2nd parameters are taken as they are, exponential of 3rd and 4th are taken, and tanh of 5th parameter is taken
     muX = x.narrow(dim, 0, 1)
     muY = x.narrow(dim, 1, 1)
     sigX = x.narrow(dim, 2, 1)
@@ -36,17 +36,17 @@ def outputActivation(x, dim=2):
     return out
 
 
-### Dataset class for the NGSIM dataset
-class NGSIMDataset(Dataset):
+### Dataset class for the NGSIM dataset 
+class NGSIMDataset(Dataset):  # This is the main class ig
 
     def __init__(self, mat_traj_file, mat_tracks_file, t_h=30, t_f=50, d_s=2):
-        self.D = np.array(h5py.File(mat_traj_file)['traj']).transpose()
-        self.T = scp.loadmat(mat_tracks_file)['tracks']
+        self.D = np.array(h5py.File(mat_traj_file)['traj']).transpose() # By dvij : Complete data as stored in the format mentioned in matlab file
+        self.T = scp.loadmat(mat_tracks_file)['tracks'] # By Dvij : Complete track data of all the cars 
         self.t_h = t_h  # length of track history
         self.t_f = t_f  # length of predicted trajectory
-        self.d_s = d_s  # down sampling rate of all sequences
+        self.d_s = d_s  # down sampling rate of all sequences  : Step size
 
-    def __len__(self):
+    def __len__(self):  
         return len(self.D)
 
     def __getitem__(self, idx):
@@ -61,7 +61,7 @@ class NGSIMDataset(Dataset):
         return hist, fut
 
     ## Helper function to get track history
-    def getHistory(self, vehId, t, refVehId, dsId):
+    def getHistory(self, vehId, t, refVehId, dsId): # By dvij : Return history of the current vehicle from the current point
         if vehId == 0:
             return np.empty([0, 2])
         else:
@@ -83,7 +83,7 @@ class NGSIMDataset(Dataset):
             return hist
 
     ## Helper function to get track future
-    def getFuture(self, vehId, t, dsId):
+    def getFuture(self, vehId, t, dsId): # By Dvij : Return future of the vehicle from the stored path
         vehTrack = self.T[dsId - 1][vehId - 1].transpose()
         refPos = vehTrack[np.where(vehTrack[:, 0] == t)][0, 1:3]
         stpt = np.argwhere(vehTrack[:, 0] == t).item() + self.d_s
@@ -112,15 +112,15 @@ class NGSIMDataset(Dataset):
         return hist_batch, fut_batch
 
 
-def maskedNLL(y_pred, y_gt, mask=None, dim=3):
+def maskedNLL(y_pred, y_gt, mask=None, dim=3): # By dvij : Loss function ig
     eps_rho = 1e-2 #this avoids division by 0
     eps = 1e-1 #the minimum value for the standard deviation is set to 10cm to avoid overfitting of low values
     y_pred_pos = y_pred.narrow(dim, 0, 2)
-    muX = y_pred_pos.narrow(dim, 0, 1)
-    muY = y_pred_pos.narrow(dim, 1, 1)
-    sigX = torch.clamp(y_pred.narrow(dim, 2, 1), eps, None)
-    sigY = torch.clamp(y_pred.narrow(dim, 3, 1), eps, None)
-    rho = torch.clamp(y_pred.narrow(dim, 4, 1), eps_rho-1, 1-eps_rho)
+    muX = y_pred_pos.narrow(dim, 0, 1) # By dvij : Predicted x 
+    muY = y_pred_pos.narrow(dim, 1, 1) # By dvij : Predicted y
+    sigX = torch.clamp(y_pred.narrow(dim, 2, 1), eps, None) # By dvij : error in x
+    sigY = torch.clamp(y_pred.narrow(dim, 3, 1), eps, None) # By dvij : Error in y
+    rho = torch.clamp(y_pred.narrow(dim, 4, 1), eps_rho-1, 1-eps_rho) # By dvij : pata nhi chala abhi tak
     ohr = 1/(1 - rho * rho)
     x = y_gt.narrow(dim, 0, 1)
     y = y_gt.narrow(dim, 1, 1)
@@ -128,7 +128,7 @@ def maskedNLL(y_pred, y_gt, mask=None, dim=3):
     diff_y = y - muY
     frac_x = diff_x / sigX
     frac_y = diff_y / sigY
-    nll = 0.5 * ohr * (frac_x * frac_x + frac_y * frac_y -
+    nll = 0.5 * ohr * (frac_x * frac_x + frac_y * frac_y -  
                        2 * rho * frac_x * frac_y) +\
           torch.log(sigX) + torch.log(sigY) - \
           0.5 * torch.log(ohr)
